@@ -168,70 +168,110 @@ def _restore_terms(text: str) -> str:
     return text
 
 
+# ============ 需要跳过的非内容页面 ============
+SKIP_TITLE_PREFIXES = (
+    "User talk:", "User:", "User blog comment:",
+    "Template:", "Template talk:",
+    "Minecraft Wiki:", "Minecraft Wiki talk:",
+    "Help:", "Help talk:",
+    "Forum:", "Thread:",
+    "Category talk:",
+)
+
+# ============ MediaWiki 内部链接清理 ============
+def _clean_wikilinks(text: str) -> str:
+    """处理 [[目标页面|显示文本]] → 显示文本，[[目标页面]] → 目标页面"""
+    # [[File:xxx|...]] → 整个删除
+    text = re.sub(r"\[\[File:[^\]]*\]\]", "", text)
+    text = re.sub(r"\[\[Image:[^\]]*\]\]", "", text)
+    text = re.sub(r"\[\[wikipedia:[^\]]*\]\]", "", text)
+    # [[xxx|yyy]] → yyy
+    text = re.sub(r"\[\[[^|\]]+\|([^\]]+)\]\]", r"\1", text)
+    # [[xxx]] → xxx
+    text = re.sub(r"\[\[([^\]]+)\]\]", r"\1", text)
+    return text
+
+
 # ============ HTML/Diff 智能清理 ============
-def clean_html(html_text: str) -> str:
+def clean_html(html_text: str, title: str = "") -> str:
     """
-    智能清理 Wiki diff HTML，提取可翻译的有意义内容。
-    拦截策略：
-    1. 删除整个 diff 表格（太复杂，翻译无意义）
-    2. 提取纯文本变更摘要（+/- 行）
-    3. 过滤 MediaWiki 模板标记
-    4. 保留简短的可读变更说明
+    基于 RSS 实际结构的智能清理。
+
+    RSS <description> 的真实结构：
+      <p>编辑摘要</p>                           ← 最有用，优先提取
+      <table>diff差异表格</table>                ← 最大噪音源，但 <ins> 里有新增内容
+      <div>...</div>                             ← 新建页面时的模板内容
+
+    策略：
+    1. 非条目页面直接跳过
+    2. 优先提取 <p> 编辑摘要
+    3. 无摘要时从 diff 表格提取 <ins> 新增内容
+    4. 清理 MediaWiki 标记语法
     """
     text = unescape(html_text)
 
-    # 1. 删除 diff 表格（最大噪音源）
-    text = re.sub(r"<table.*?</table>", "", text, flags=re.DOTALL)
+    # ---- 0. 跳过非内容页面 ----
+    if any(title.startswith(p) for p in SKIP_TITLE_PREFIXES):
+        return "(系统/用户页面，已跳过)"
 
-    # 2. 提取 <p> 标签中的简短说明（通常是编辑摘要）
-    p_texts = re.findall(r"<p>(.*?)</p>", text, re.DOTALL)
+    # ---- 1. 提取 diff 表格中的 <ins> 新增内容（在删表之前） ----
+    ins_contents = []
+    for m in re.finditer(r"<ins[^>]*>(.*?)</ins>", text, re.DOTALL):
+        ins_text = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+        ins_text = _clean_wikilinks(ins_text)
+        ins_text = re.sub(r"\s+", " ", ins_text).strip()
+        if ins_text and len(ins_text) > 2:
+            ins_contents.append(ins_text)
+
+    # ---- 2. 删除 diff 表格（最大噪音源） ----
+    text_no_table = re.sub(r"<table.*?</table>", "", text, flags=re.DOTALL)
+    # 删除 HTML 注释
+    text_no_table = re.sub(r"<!--.*?-->", "", text_no_table, flags=re.DOTALL)
+
+    # ---- 3. 提取 <p> 编辑摘要 ----
+    p_texts = re.findall(r"<p>(.*?)</p>", text_no_table, re.DOTALL)
     summary_parts = []
     for p in p_texts:
         p_clean = re.sub(r"<[^>]+>", "", p).strip()
-        if p_clean and len(p_clean) > 2:
+        p_clean = _clean_wikilinks(p_clean)
+        p_clean = re.sub(r"\{\{[^}]*\}\}", "", p_clean).strip()
+        # 过滤无意义摘要
+        if not p_clean or len(p_clean) <= 2:
+            continue
+        # "New page"、"Created page with" 后面跟模板的，只保留模板名
+        p_clean = re.sub(r"^Created page with\s*\"", "", p_clean).strip()
+        p_clean = re.sub(r"^New page$", "", p_clean).strip()
+        p_clean = p_clean.rstrip('"').strip()
+        if p_clean and p_clean not in ("", "New page"):
             summary_parts.append(p_clean)
 
-    # 3. 去掉所有 HTML 标签
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-
-    # 4. 过滤 MediaWiki 模板/标记噪音
-    noise_patterns = [
-        r"\{\{subst:[^}]*\}\}",
-        r"\{\{[^}]*\}\}",
-        r"\[\[File:[^\]]*\]\]",
-        r"\[\[Image:[^\]]*\]\]",
-        r"\[\[wikipedia:[^\]]*\]\]",
-        r"<!--.*?-->",
-        r"Revision as of .*?\|",
-        r"Older revision",
-        r"New page",
-        r"Created page with",
-        r"\(undo\)",
-        r"data-mw=\"[^\"]*\"",
-        r"class=\"[^\"]*\"",
-        r"style=\"[^\"]*\"",
-    ]
-    for pat in noise_patterns:
-        text = re.sub(pat, "", text, flags=re.DOTALL | re.IGNORECASE)
-
-    text = re.sub(r"\s+", " ", text).strip()
-
-    # 5. 如果提取到了 <p> 摘要，优先使用（通常更短更准）
+    # ---- 4. 确定最终输出 ----
+    # 优先级：p 摘要 > ins 新增内容 > 兜底
     if summary_parts:
-        summary = " | ".join(summary_parts)
-        # 截断过长摘要
-        if len(summary) > 300:
-            summary = summary[:300] + "..."
-        return summary
+        result = " | ".join(summary_parts)
+    elif ins_contents:
+        result = "+ " + "; + ".join(ins_contents[:3])
+    else:
+        # 从剩余文本中提取 <div> 内容作为最后手段
+        div_texts = re.findall(r"<div>(.*?)</div>", text_no_table, re.DOTALL)
+        div_clean = ""
+        for d in div_texts:
+            dc = re.sub(r"<[^>]+>", "", d).strip()
+            dc = _clean_wikilinks(dc)
+            dc = re.sub(r"\{\{[^}]*\}\}", "", dc).strip()
+            if len(dc) > 10:
+                div_clean = dc
+                break
+        if div_clean:
+            result = div_clean
+        else:
+            return "(无详细描述，请查看原文)"
 
-    # 6. 没有摘要时，取清理后文本的前 300 字符
-    if not text or len(text) < 5:
-        return "(无详细描述，请查看原文)"
-
-    if len(text) > 300:
-        text = text[:300] + "..."
-    return text
+    # ---- 5. 最终清理 ----
+    result = re.sub(r"\s+", " ", result).strip()
+    if len(result) > 300:
+        result = result[:300] + "..."
+    return result
 
 
 # ============ RSS 抓取与处理 ============
@@ -278,8 +318,13 @@ def fetch_and_process_rss():
             continue
 
         # 清理并翻译
-        clean_desc = clean_html(desc_raw)
-        logger.info(f"翻译: {title}")
+        clean_desc = clean_html(desc_raw, title)
+
+        # 跳过非内容页面的翻译
+        if clean_desc == "(系统/用户页面，已跳过)":
+            continue
+
+        logger.info(f"翻译: {title} → {clean_desc[:60]}")
         title_zh = google_translate(title)
         desc_zh = google_translate(clean_desc)
 
