@@ -1,10 +1,7 @@
 package com.mcwiki.translator
 
-import android.content.Context
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
-import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -31,9 +28,10 @@ class WikiAdapter(
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val item = getItem(position)
         with(holder.binding) {
-            tvTitleTranslated.text = item.titleTranslated.ifBlank { item.titleOriginal }
-            tvTitleOriginal.text = item.titleOriginal
-            tvDescription.text = item.descriptionTranslated.ifBlank { item.descriptionOriginal }
+            // 有翻译显示翻译，否则显示原文
+            tvTitleTranslated.text = item.titleTranslated?.ifBlank { null } ?: item.title
+            tvTitleOriginal.text = item.title
+            tvDescription.text = item.preview.ifBlank { "(无预览)" }
             tvMeta.text = buildString {
                 append("作者: ${item.author}")
                 if (item.pubDate.isNotBlank()) append("  |  ${formatDate(item.pubDate)}")
@@ -44,7 +42,6 @@ class WikiAdapter(
 
     private fun formatDate(dateStr: String): String {
         return try {
-            // 简单截取日期部分
             val parts = dateStr.split(" ")
             if (parts.size >= 4) "${parts[1]} ${parts[2]} ${parts[3]}" else dateStr
         } catch (_: Exception) {

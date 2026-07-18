@@ -23,11 +23,12 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val adapter = WikiAdapter { item ->
-        // 点击条目打开原文链接
-        if (item.link.isNotBlank()) {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(item.link))
-            startActivity(intent)
+        // 点击条目打开详情页
+        val intent = Intent(this, DetailActivity::class.java).apply {
+            putExtra(DetailActivity.EXTRA_HASH, item.hash)
+            putExtra(DetailActivity.EXTRA_TITLE, item.titleTranslated?.ifBlank { null } ?: item.title)
         }
+        startActivity(intent)
     }
 
     private val updateReceiver = object : android.content.BroadcastReceiver() {
