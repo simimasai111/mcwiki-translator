@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#1A1A2E">
+
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipeRefresh"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingBottom="16dp" />
+
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <TextView
+        android:id="@+id/tvEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="暂无翻译内容\n下拉刷新或启动服务"
+        android:textColor="#666666"
+        android:textSize="16sp"
+        android:visibility="gone" />
+
+    <!-- 底部控制栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:background="#0F3460"
+        android:gravity="center_vertical">
+
+        <EditText
+            android:id="@+id/etServerUrl"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_weight="1"
+            android:background="@drawable/setting_bg"
+            android:hint="服务器地址"
+            android:text="http://10.0.2.2:8765"
+            android:textColor="#E0E0E0"
+            android:textColorHint="#555555"
+            android:textSize="13sp"
+            android:paddingHorizontal="12dp"
+            android:singleLine="true"
+            android:layout_marginEnd="8dp"
+            android:inputType="textUri" />
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchService"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="监控"
+            android:textColor="#E0E0E0"
+            android:textSize="13sp" />
+
+    </LinearLayout>
+
+</LinearLayout>

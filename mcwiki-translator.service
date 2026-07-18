@@ -1,0 +1,17 @@
+[Unit]
+Description=Minecraft Wiki Translation Push Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mcwiki_translator
+ExecStart=/usr/bin/python3 /opt/mcwiki_translator/server.py
+Restart=on-failure
+RestartSec=30
+User=mcwiki
+Group=mcwiki
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

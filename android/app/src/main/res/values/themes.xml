@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.McWiki" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#5DADE2</item>
+        <item name="colorPrimaryVariant">#0F3460</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="android:windowBackground">#1A1A2E</item>
+        <item name="android:statusBarColor">#0F3460</item>
+    </style>
+</resources>
