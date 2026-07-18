@@ -50,38 +50,187 @@ def _translate_mymemory(text: str) -> str:
 
 
 def google_translate(text: str) -> str:
-    """翻译文本为中文，多引擎自动降级"""
+    """翻译文本为中文，多引擎自动降级 + MC 专有名词保护"""
     global _translate_use_fallback
     if not text or not text.strip():
         return text
     if len(text) > 3000:
         text = text[:3000] + "...(已截断)"
+    # 翻译前保护 MC 专有名词
+    text = _protect_terms(text)
     try:
         if not _translate_use_fallback:
-            return _translate_deep_translator(text)
+            result = _translate_deep_translator(text)
         else:
-            return _translate_mymemory(text)
+            result = _translate_mymemory(text)
+        # 翻译后还原
+        return _restore_terms(result) if result else text
     except Exception as e:
         logger.warning(f"翻译失败({_translate_use_fallback}): {e}")
         if not _translate_use_fallback:
             _translate_use_fallback = True
             logger.info("切换到 MyMemory 备用翻译引擎")
             try:
-                return _translate_mymemory(text)
+                result = _translate_mymemory(text)
+                return _restore_terms(result) if result else text
             except Exception as e2:
                 logger.warning(f"MyMemory 也失败: {e2}")
-        return text + " [翻译失败]"
+        return _restore_terms(text) + " [翻译失败]"
 
 
-# ============ HTML 清理 ============
+# ============ Minecraft 专有名词保护词典 ============
+# 翻译前替换为占位符，翻译后还原，避免专有名词被乱翻
+MC_TERMS = {
+    # 方块/物品
+    "Block": "§BLOCK§", "blocks": "§BLOCKS§", "Blocks": "§BLOCKS§",
+    "item": "§ITEM§", "items": "§ITEMS§",
+    "entity": "§ENTITY§", "entities": "§ENTITIES§",
+    "mob": "§MOB§", "mobs": "§MOBS§",
+    "Creeper": "§CREEPER§", "Zombie": "§ZOMBIE§", "Skeleton": "§SKELETON§",
+    "Spider": "§SPIDER§", "Enderman": "§ENDERMAN§", "Blaze": "§BLAZE§",
+    "Ghast": "§GHAST§", "Slime": "§SLIME§", "Witch": "§WITCH§",
+    "Villager": "§VILLAGER§", "Iron Golem": "§IRON_GOLEM§",
+    "Snow Golem": "§SNOW_GOLEM§", "Wither": "§WITHER§", "Ender Dragon": "§ENDER_DRAGON§",
+    "Warden": "§WARDEN§", "Allay": "§ALLAY§", "Frog": "§FROG§",
+    "Copper": "§COPPER§", "copper": "§COPPER§",
+    "Redstone": "§REDSTONE§", "redstone": "§REDSTONE§",
+    "Netherite": "§NETHERITE§", "netherite": "§NETHERITE§",
+    "Diamond": "§DIAMOND§", "diamond": "§DIAMOND§",
+    "Emerald": "§EMERALD§", "emerald": "§EMERALD§",
+    "Gold": "§GOLD§", "Iron": "§IRON§", "Coal": "§COAL§",
+    "Lapis Lazuli": "§LAPIS§", "Lapis": "§LAPIS§",
+    "Obsidian": "§OBSIDIAN§", "obsidian": "§OBSIDIAN§",
+    "Bedrock": "§BEDROCK§", "bedrock": "§BEDROCK§",
+    "Cobblestone": "§COBBLESTONE§", "cobblestone": "§COBBLESTONE§",
+    "Sandstone": "§SANDSTONE§", "sandstone": "§SANDSTONE§",
+    "Stairs": "§STAIRS§", "stairs": "§STAIRS§",
+    "Slab": "§SLAB§", "slabs": "§SLABS§", "Slabs": "§SLABS§",
+    "Snow": "§SNOW§", "snow": "§SNOW§",
+    "Ladder": "§LADDER§", "ladder": "§LADDER§",
+    "Vine": "§VINE§", "vines": "§VINES§", "Vines": "§VINES§",
+    "Turtle Egg": "§TURTLE_EGG§", "Sea Pickle": "§SEA_PICKLE§",
+    "Coral": "§CORAL§", "coral": "§CORAL§",
+    "Enchanting": "§ENCHANTING§", "enchanting": "§ENCHANTING§",
+    "enchantment": "§ENCHANTMENT§", "enchantments": "§ENCHANTMENTS§",
+    "potion": "§POTION§", "potions": "§POTIONS§",
+    "crafting": "§CRAFTING§", "Crafting": "§CRAFTING§",
+    "smelting": "§SMELTING§", "Smelting": "§SMELTING§",
+    "brewing": "§BREWING§", "Brewing": "§BREWING§",
+    "Nether": "§NETHER§", "nether": "§NETHER§",
+    "End": "§END§", "The End": "§THE_END§",
+    "Overworld": "§OVERWORLD§", "overworld": "§OVERWORLD§",
+    "dimension": "§DIMENSION§",
+    "biome": "§BIOME§", "biomes": "§BIOMES§",
+    "chunk": "§CHUNK§", "chunks": "§CHUNKS§",
+    "tick": "§TICK§", "ticks": "§TICKS§",
+    "experience": "§XP§", "Experience": "§XP§",
+    "hunger": "§HUNGER§", "Hunger": "§HUNGER§",
+    "health": "§HEALTH§",
+    "armor": "§ARMOR§", "Armor": "§ARMOR§",
+    "damage": "§DAMAGE§", "Damage": "§DAMAGE§",
+    "durability": "§DURABILITY§",
+    "creative mode": "§CREATIVE§", "survival mode": "§SURVIVAL§",
+    "hardcore": "§HARDCORE§", "spectator mode": "§SPECTATOR§",
+    "Minecraft": "§MC§", "Wiki": "§WIKI§",
+    "Java Edition": "§JAVA_ED§", "Bedrock Edition": "§BEDROCK_ED§",
+    "Bukkit": "§BUKKIT§", "Spigot": "§SPIGOT§", "Paper": "§PAPER§",
+    "Fabric": "§FABRIC§", "Forge": "§FORGE§",
+    "command": "§COMMAND§", "commands": "§COMMANDS§",
+    "data pack": "§DATAPACK§", "resource pack": "§RESOURCEPACK§",
+    "behavior pack": "§BEHAVIORPACK§",
+    "Transparent": "§TRANSPARENT§", "Opaque": "§OPAQUE§",
+    "Explosion": "§EXPLOSION§", "explosion": "§EXPLOSION§",
+    "explosions": "§EXPLOSIONS§", "Explosions": "§EXPLOSIONS§",
+    "waxed": "§WAXED§",
+    # 常见模板/分类名
+    "Template:": "§TPL§:", "Category:": "§CAT§:",
+    "Talk:": "§TALK§:", "User:": "§USER§:",
+    "User talk:": "§USERTALK§:", "Special:": "§SPECIAL§:",
+    "Minecraft Wiki:": "§MCWIKI§:",
+}
+
+# 翻译后还原用
+_MC_RESTORE = {v: k for k, v in MC_TERMS.items()}
+
+
+def _protect_terms(text: str) -> str:
+    """翻译前：将 MC 专有名词替换为占位符"""
+    # 按长度降序排列，优先匹配长词
+    for en, placeholder in sorted(MC_TERMS.items(), key=lambda x: -len(x[0])):
+        text = re.sub(re.escape(en), placeholder, text)
+    return text
+
+
+def _restore_terms(text: str) -> str:
+    """翻译后：将占位符还原为 MC 专有名词"""
+    for placeholder, en in _MC_RESTORE.items():
+        text = text.replace(placeholder, en)
+    return text
+
+
+# ============ HTML/Diff 智能清理 ============
 def clean_html(html_text: str) -> str:
-    """清理 HTML 标签，提取纯文本摘要"""
+    """
+    智能清理 Wiki diff HTML，提取可翻译的有意义内容。
+    拦截策略：
+    1. 删除整个 diff 表格（太复杂，翻译无意义）
+    2. 提取纯文本变更摘要（+/- 行）
+    3. 过滤 MediaWiki 模板标记
+    4. 保留简短的可读变更说明
+    """
     text = unescape(html_text)
-    text = re.sub(r"<table.*?</table>", "[表格差异已省略]", text, flags=re.DOTALL)
+
+    # 1. 删除 diff 表格（最大噪音源）
+    text = re.sub(r"<table.*?</table>", "", text, flags=re.DOTALL)
+
+    # 2. 提取 <p> 标签中的简短说明（通常是编辑摘要）
+    p_texts = re.findall(r"<p>(.*?)</p>", text, re.DOTALL)
+    summary_parts = []
+    for p in p_texts:
+        p_clean = re.sub(r"<[^>]+>", "", p).strip()
+        if p_clean and len(p_clean) > 2:
+            summary_parts.append(p_clean)
+
+    # 3. 去掉所有 HTML 标签
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
-    if len(text) > 500:
-        text = text[:500] + "..."
+
+    # 4. 过滤 MediaWiki 模板/标记噪音
+    noise_patterns = [
+        r"\{\{subst:[^}]*\}\}",
+        r"\{\{[^}]*\}\}",
+        r"\[\[File:[^\]]*\]\]",
+        r"\[\[Image:[^\]]*\]\]",
+        r"\[\[wikipedia:[^\]]*\]\]",
+        r"<!--.*?-->",
+        r"Revision as of .*?\|",
+        r"Older revision",
+        r"New page",
+        r"Created page with",
+        r"\(undo\)",
+        r"data-mw=\"[^\"]*\"",
+        r"class=\"[^\"]*\"",
+        r"style=\"[^\"]*\"",
+    ]
+    for pat in noise_patterns:
+        text = re.sub(pat, "", text, flags=re.DOTALL | re.IGNORECASE)
+
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # 5. 如果提取到了 <p> 摘要，优先使用（通常更短更准）
+    if summary_parts:
+        summary = " | ".join(summary_parts)
+        # 截断过长摘要
+        if len(summary) > 300:
+            summary = summary[:300] + "..."
+        return summary
+
+    # 6. 没有摘要时，取清理后文本的前 300 字符
+    if not text or len(text) < 5:
+        return "(无详细描述，请查看原文)"
+
+    if len(text) > 300:
+        text = text[:300] + "..."
     return text
 
 
